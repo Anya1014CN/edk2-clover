@@ -1,0 +1,13 @@
+[Defines]
+  DEC_SPECIFICATION              = 0x0001001A
+  PACKAGE_NAME                   = msm8996Pkg
+  PACKAGE_GUID                   = 4f3f5dd7-4b59-4ae1-8ad3-f04f72c4c0f1
+  PACKAGE_VERSION                = 1.0
+
+[Includes]
+  Include
+
+[Guids]
+  gmsm8996PkgTokenSpaceGuid      = { 0x6bcb25c5, 0xa83b, 0x4f9b, {0x9c, 0x0f, 0x6b, 0x75, 0x8e, 0x0b, 0xd3, 0x42 } }
+
+[PcdsFixedAtBuild.common]
