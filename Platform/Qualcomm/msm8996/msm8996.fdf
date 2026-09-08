@@ -31,7 +31,7 @@ ErasePolarity = 1
 
 # This one is tricky, it must be: BlockSize * NumBlocks = Size
 BlockSize     = 0x00001000
-NumBlocks     = 0x700
+NumBlocks     = 0x800
 
 ################################################################################
 #
@@ -49,7 +49,7 @@ NumBlocks     = 0x700
 #
 ################################################################################
 
-0x00000000|0x00700000
+0x00000000|0x00800000
 gArmTokenSpaceGuid.PcdFvBaseAddress|gArmTokenSpaceGuid.PcdFvSize
 FV = FVMAIN_COMPACT
 
@@ -87,136 +87,43 @@ READ_LOCK_STATUS   = TRUE
 # Apriori
 !include Platform/Qualcomm/msm8996/Apriori.fdf.inc
 
+  # Architectural services, GOP and the FV-resident GUI only.
   INF MdeModulePkg/Core/Dxe/DxeMain.inf
-
-  #
-  # PI DXE Drivers producing Architectural Protocols (EFI Services)
-  #
   INF MdeModulePkg/Universal/PCD/Dxe/Pcd.inf
   INF ArmPkg/Drivers/CpuDxe/CpuDxe.inf
   INF MdeModulePkg/Core/RuntimeDxe/RuntimeDxe.inf
-  INF MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
-
-!if $(SECURE_BOOT_ENABLE) == TRUE
-!include ArmPlatformPkg/SecureBootDefaultKeys.fdf.inc
-  INF SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
-  INF SecurityPkg/EnrollFromDefaultKeysApp/EnrollFromDefaultKeysApp.inf
-  INF SecurityPkg/VariableAuthenticated/SecureBootDefaultKeysDxe/SecureBootDefaultKeysDxe.inf
-!endif
-
+  # Required by this DXE core's architecture-protocol checklist. The DSC
+  # resolves CapsuleLib to DxeCapsuleLibNull, not a firmware update backend.
   INF MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
+  INF MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
   INF EmbeddedPkg/EmbeddedMonotonicCounter/EmbeddedMonotonicCounter.inf
   INF MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe.inf
   INF EmbeddedPkg/RealTimeClockRuntimeDxe/RealTimeClockRuntimeDxe.inf
   INF MdeModulePkg/Universal/ReportStatusCodeRouter/RuntimeDxe/ReportStatusCodeRouterRuntimeDxe.inf
   INF MdeModulePkg/Universal/StatusCodeHandler/RuntimeDxe/StatusCodeHandlerRuntimeDxe.inf
   INF EmbeddedPkg/MetronomeDxe/MetronomeDxe.inf
+  INF ArmPkg/Drivers/ArmGic/ArmGicDxe.inf
+  INF ArmPkg/Drivers/TimerDxe/TimerDxe.inf
+  INF MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
+  INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
 
-  #
-  # Multiple Console IO support
-  #
-  INF EmbeddedPkg/SimpleTextInOutSerial/SimpleTextInOutSerial.inf
+  INF Platform/ZTE/msm8996/Drivers/FujisanDisplayDxe/FujisanDisplayDxe.inf
   INF MdeModulePkg/Universal/Console/ConPlatformDxe/ConPlatformDxe.inf
   INF MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
   INF MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf
-  INF MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
-
-  INF ArmPkg/Drivers/ArmGic/ArmGicDxe.inf
-  INF ArmPkg/Drivers/TimerDxe/TimerDxe.inf
-
-  INF MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
-
-# BSP drivers
-!include Platform/Qualcomm/msm8996/dxe.fdf.inc
-
-  # Disabled in Milestone 1; re-enable after framebuffer/SimpleInit validation.
-
-  #
-  # USB Host Support
-  #
-  INF MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
-  INF MdeModulePkg/Bus/Usb/UsbMouseDxe/UsbMouseDxe.inf
-  INF MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf
-
-  #
-  # FAT filesystem + GPT/MBR partitioning
-  #
-  INF MdeModulePkg/Universal/Disk/DiskIoDxe/DiskIoDxe.inf
-  INF MdeModulePkg/Universal/Disk/PartitionDxe/PartitionDxe.inf
-  INF FatPkg/EnhancedFatDxe/Fat.inf
-  INF MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
-  INF MdeModulePkg/Universal/FvSimpleFileSystemDxe/FvSimpleFileSystemDxe.inf
-  INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
-
-  INF MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
-
-  #
-  # ACPI Support
-  #
-  INF MdeModulePkg/Universal/Acpi/AcpiTableDxe/AcpiTableDxe.inf
-  INF MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf
-  INF MdeModulePkg/Universal/Acpi/BootGraphicsResourceTableDxe/BootGraphicsResourceTableDxe.inf
-
-  #
-  # FDT support
-  #
-  INF EmbeddedPkg/Drivers/DtPlatformDxe/DtPlatformDxe.inf
-
-  #
-  # SMBIOS Support
-  #
-  INF Platform/RenegadePkg/Drivers/PlatformSmbiosDxe/PlatformSmbiosDxe.inf
-  INF MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
-
-  #
-  # UEFI applications
-  #
-  INF ShellPkg/Application/Shell/Shell.inf
-!ifdef $(INCLUDE_TFTP_COMMAND)
-  INF ShellPkg/DynamicCommand/TftpDynamicCommand/TftpDynamicCommand.inf
-!endif #$(INCLUDE_TFTP_COMMAND)
-
-  # Disabled in Milestone 1; re-enable after framebuffer/SimpleInit validation.
-
-  #
-  # Bds
-  #
-  INF MdeModulePkg/Universal/PrintDxe/PrintDxe.inf
   INF MdeModulePkg/Universal/DevicePathDxe/DevicePathDxe.inf
-  INF MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
-  INF MdeModulePkg/Universal/SetupBrowserDxe/SetupBrowserDxe.inf
-  INF MdeModulePkg/Universal/DriverHealthManagerDxe/DriverHealthManagerDxe.inf
+  INF MdeModulePkg/Universal/PrintDxe/PrintDxe.inf
+  INF MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
+  INF MdeModulePkg/Universal/FvSimpleFileSystemDxe/FvSimpleFileSystemDxe.inf
   INF MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
-  INF MdeModulePkg/Application/UiApp/UiApp.inf
-  INF Platform/RenegadePkg/Drivers/LogoDxe/LogoDxe.inf
+  INF src/main/SimpleInitMain.inf
 
-  #
-  # Simple Init GUI
-  #
-  # Disabled in Milestone 1; re-enable after framebuffer/SimpleInit validation.
-
-  # INF src/kernelfdt/KernelFdtDxe.inf
-
-!if $(AB_SLOTS_SUPPORT) == TRUE
-  INF GPLDrivers/Drivers/BootSlotDxe/BootSlotDxe.inf
-  INF GPLDrivers/Application/SwitchSlotsApp/SwitchSlotsApp.inf
-!endif
-
-!if $(ENABLE_LINUX_UTILS) == 1
+  # No storage controller, USB, ACPI, SMBIOS, shell, Android handoff or second
+  # panel driver. SimpleInit is launched directly; no buttons are required.
   FILE FREEFORM = 4b0364cf-1c5b-47aa-9073-d7b5039ce49b {
-    SECTION RAW = tools/simpleinit.static.uefi.cfg
+    SECTION RAW = Platform/ZTE/msm8996/simpleinit.static.uefi.cfg
     SECTION UI = "simpleinit.static.uefi.cfg"
   }
-
-  INF Platform/RenegadePkg/Application/Reboot2PayloadApp/Reboot2PayloadApp.inf
-  # FILE FREEFORM = 9603c059-3ca4-480b-b520-0335a4d464fc {
-  #  SECTION RAW = tools/reboot2payload.lua
-  #  SECTION UI = "reboot2payload.lua"
-  # }
-!endif
-
-# Device specific fdf
-!include $(DEVICE_DXE_FV_COMPONENTS)
 
 [FV.FVMAIN_COMPACT]
 FvAlignment        = 8

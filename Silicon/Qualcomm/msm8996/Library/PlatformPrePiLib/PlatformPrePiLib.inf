@@ -58,6 +58,7 @@
 
 [FixedPcd]
   gQcomTokenSpaceGuid.PcdMipiFrameBufferAddress
+  gQcomTokenSpaceGuid.PcdMipiFrameBufferStride
   gQcomTokenSpaceGuid.PcdMipiFrameBufferWidth
   gQcomTokenSpaceGuid.PcdMipiFrameBufferHeight
   gQcomTokenSpaceGuid.PcdMipiFrameBufferPixelBpp

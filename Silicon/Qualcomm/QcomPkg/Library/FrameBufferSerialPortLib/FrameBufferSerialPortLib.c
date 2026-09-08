@@ -19,10 +19,96 @@ FBCON_COLOR    m_Color;
 BOOLEAN        m_Initialized = FALSE;
 
 UINTN gWidth = FixedPcdGet32(PcdMipiFrameBufferWidth);
-// Reserve half screen for output
+// Physical scanline width, in pixels. It may exceed the visible width.
+UINTN gStride = FixedPcdGet32(PcdMipiFrameBufferStride);
 UINTN gHeight = FixedPcdGet32(PcdMipiFrameBufferHeight);
 UINTN gBpp    = FixedPcdGet32(PcdMipiFrameBufferPixelBpp);
 UINTN delay = FixedPcdGet32(PcdMipiFrameBufferDelay);
+
+/*
+ * The Fujisan kernel exposes ramoops through /sys/fs/pstore.  This trace
+ * uses the first dmesg record and must be captured immediately after adb
+ * reconnects, before Android userspace consumes or rotates it.
+ *
+ * persistent_ram_buffer is deliberately reproduced here: sig, start and
+ * size are three little-endian 32-bit fields followed by the circular data
+ * area.  The kernel expects sig == 0x43474244 when the ramoops record has no
+ * ECC and no alternate signature.
+ */
+#define UEFI_PSTORE_SIGNATURE 0x43474244U
+
+typedef struct {
+  volatile UINT32 Signature;
+  volatile INT32  Start;
+  volatile INT32  Size;
+} UEFI_PSTORE_HEADER;
+
+STATIC volatile UEFI_PSTORE_HEADER *mUefiPstoreHeader;
+STATIC volatile UINT8               *mUefiPstoreData;
+STATIC UINTN                         mUefiPstoreDataSize;
+STATIC BOOLEAN                       mUefiPstoreReady;
+
+STATIC
+VOID
+UefiPstoreInitialize(VOID)
+{
+  UINT32 Address = FixedPcdGet32(PcdUefiPstoreLogAddress);
+  UINT32 Size    = FixedPcdGet32(PcdUefiPstoreLogSize);
+
+  if (mUefiPstoreReady || Address == 0 || Size <= sizeof(UEFI_PSTORE_HEADER))
+    return;
+
+  mUefiPstoreHeader = (volatile UEFI_PSTORE_HEADER *)(UINTN)Address;
+  mUefiPstoreData = (volatile UINT8 *)(UINTN)(Address + sizeof(UEFI_PSTORE_HEADER));
+  mUefiPstoreDataSize = Size - sizeof(UEFI_PSTORE_HEADER);
+  // SerialPortLib is statically linked into every DXE: module-local state
+  // must not clear the shared trace. BootShim starts a new boot record.
+  if (mUefiPstoreHeader->Signature != UEFI_PSTORE_SIGNATURE ||
+      mUefiPstoreHeader->Size < 0 ||
+      (UINTN)mUefiPstoreHeader->Size > mUefiPstoreDataSize ||
+      mUefiPstoreHeader->Start !=
+        mUefiPstoreHeader->Size % (INT32)mUefiPstoreDataSize) {
+    CONST CHAR8 Header[] = "====0.0\nFJ-UEFI-20260908-E NO-SHIM-RECORD\n";
+    CopyMem((VOID *)mUefiPstoreData, Header, sizeof(Header) - 1);
+    mUefiPstoreHeader->Start = sizeof(Header) - 1;
+    mUefiPstoreHeader->Size = sizeof(Header) - 1;
+    mUefiPstoreHeader->Signature = UEFI_PSTORE_SIGNATURE;
+  }
+  ArmDataSynchronizationBarrier();
+  mUefiPstoreReady = TRUE;
+}
+
+STATIC
+VOID
+UefiPstoreWrite(IN CONST UINT8 *Buffer, IN UINTN NumberOfBytes)
+{
+  UINTN Index;
+
+  UefiPstoreInitialize();
+  if (!mUefiPstoreReady)
+    return;
+
+  // Append-only: Linux requires the ==== timestamp at the beginning of a
+  // dmesg record. A wrapping ring would erase that header and be discarded.
+  // The Fujisan DEBUG mask deliberately excludes per-protocol INFO spam.
+  for (Index = 0; Index < NumberOfBytes; Index++) {
+    UINTN Size = (UINTN)mUefiPstoreHeader->Size;
+    CONST CHAR8 Full[] = "\nFJ-TRACE-FULL (later messages dropped)\n";
+    if (Size >= mUefiPstoreDataSize - sizeof(Full))
+      break;
+    mUefiPstoreData[Size++] = Buffer[Index];
+    if (Size == mUefiPstoreDataSize - sizeof(Full)) {
+      CopyMem((VOID *)(mUefiPstoreData + Size), Full, sizeof(Full) - 1);
+      Size += sizeof(Full) - 1;
+    }
+    mUefiPstoreHeader->Size = (INT32)Size;
+    mUefiPstoreHeader->Start = (INT32)(Size % mUefiPstoreDataSize);
+  }
+  ArmDataSynchronizationBarrier();
+  WriteBackDataCacheRange((VOID *)mUefiPstoreHeader,
+                         sizeof(*mUefiPstoreHeader) + mUefiPstoreHeader->Size);
+
+}
 
 // Module-used internal routine
 void FbConPutCharWithFactor(char c, int type, unsigned scale_factor);
@@ -44,6 +130,12 @@ SerialPortInitialize(VOID)
   // Prevent dup initialization
   if (m_Initialized)
     return RETURN_SUCCESS;
+
+  UefiPstoreInitialize();
+  if (FixedPcdGetBool(PcdFrameBufferSerialLogOnly)) {
+    m_Initialized = TRUE;
+    return RETURN_SUCCESS;
+  }
 
   // Interrupt Disable
   InterruptState = ArmGetInterruptState();
@@ -67,7 +159,7 @@ void ResetFb(void)
   UINTN BgColor = FB_BGRA8888_BLACK;
 
   // Set to black color.
-  for (UINTN i = 0; i < gWidth; i++) {
+  for (UINTN i = 0; i < gStride; i++) {
     for (UINTN j = 0; j < gHeight; j++) {
       BgColor = FB_BGRA8888_BLACK;
       // Set pixel bit
@@ -129,11 +221,15 @@ paint:
   ArmDisableInterrupts();
 
   Pixels = (void *)FixedPcdGet32(PcdMipiFrameBufferAddress);
-  Pixels += m_Position.y * ((gBpp / 8) * FONT_HEIGHT * gWidth);
+  Pixels += m_Position.y * ((gBpp / 8) * FONT_HEIGHT * gStride);
   Pixels += m_Position.x * scale_factor * ((gBpp / 8) * (FONT_WIDTH + 1));
 
+  // Glyph row advancement must use the physical scanline stride.  The
+  // Fujisan XBL surface has 1080 visible pixels but an aligned 1088-pixel
+  // stride; using the visible width progressively writes each console row
+  // into the wrong memory location.
   FbConDrawglyph(
-      Pixels, gWidth, (gBpp / 8), font5x12 + (c - 32) * 2, scale_factor);
+      Pixels, gStride, (gBpp / 8), font5x12 + (c - 32) * 2, scale_factor);
 
   m_Position.x++;
 
@@ -158,8 +254,8 @@ newline:
   }
   else {
     Pixels = (void *)FixedPcdGet32(PcdMipiFrameBufferAddress);
-    Pixels += m_Position.y * ((gBpp / 8) * FONT_HEIGHT * gWidth);
-    ZeroMem(Pixels, ((gBpp / 8) * FONT_HEIGHT * gWidth) * scale_factor);
+    Pixels += m_Position.y * ((gBpp / 8) * FONT_HEIGHT * gStride);
+    ZeroMem(Pixels, ((gBpp / 8) * FONT_HEIGHT * gStride) * scale_factor);
     FbConFlush();
     if (intstate)
       ArmEnableInterrupts();
@@ -264,18 +360,17 @@ void FbConDrawglyph(
   }
 }
 
-/* TODO: Take stride into account */
 void FbConScrollUp(void)
 {
   unsigned short *dst   = (void *)FixedPcdGet32(PcdMipiFrameBufferAddress);
-  unsigned short *src   = dst + (gWidth * FONT_HEIGHT);
-  unsigned        count = gWidth * (gHeight - FONT_HEIGHT);
+  unsigned short *src   = dst + (gStride * FONT_HEIGHT);
+  unsigned        count = gStride * (gHeight - FONT_HEIGHT);
 
   while (count--) {
     *dst++ = *src++;
   }
 
-  count = gWidth * FONT_HEIGHT;
+  count = gStride * FONT_HEIGHT;
   while (count--) {
     *dst++ = m_Color.Background;
   }
@@ -294,7 +389,7 @@ void FbConFlush(void)
 
   WriteBackInvalidateDataCacheRange(
       (void *)FixedPcdGet32(PcdMipiFrameBufferAddress),
-      (total_x * total_y * bytes_per_bpp));
+      (gStride * total_y * bytes_per_bpp));
 }
 
 UINTN
@@ -304,8 +399,9 @@ SerialPortWrite(IN UINT8 *Buffer, IN UINTN NumberOfBytes)
   UINT8 *CONST Final          = &Buffer[NumberOfBytes];
   UINTN        InterruptState = ArmGetInterruptState();
   ArmDisableInterrupts();
+  UefiPstoreWrite(Buffer, NumberOfBytes);
 
-  while (Buffer < Final) {
+  while (!FixedPcdGetBool(PcdFrameBufferSerialLogOnly) && Buffer < Final) {
     FbConPutCharWithFactor(*Buffer++, FBCON_COMMON_MSG, SCALE_FACTOR);
   }
 
@@ -323,9 +419,10 @@ SerialPortWriteCritical(IN UINT8 *Buffer, IN UINTN NumberOfBytes)
   UINTN        InterruptState    = ArmGetInterruptState();
 
   ArmDisableInterrupts();
+  UefiPstoreWrite(Buffer, NumberOfBytes);
   m_Color.Foreground = FB_BGRA8888_YELLOW;
 
-  while (Buffer < Final) {
+  while (!FixedPcdGetBool(PcdFrameBufferSerialLogOnly) && Buffer < Final) {
     FbConPutCharWithFactor(*Buffer++, FBCON_COMMON_MSG, SCALE_FACTOR);
   }
 

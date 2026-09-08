@@ -14,7 +14,7 @@
 !include Platform/Qualcomm/msm8996/msm8996.dsc
 
 [BuildOptions.common]
-  # SimpleInit and Android handoff are enabled in later milestones only.
+  # Only this platform uses the isolated display-only BDS library.
 
 [PcdsFixedAtBuild.common]
   gRenegadePkgTokenSpaceGuid.PcdDeviceVendor|"ZTE"

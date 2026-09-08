@@ -44,6 +44,13 @@
   gQcomTokenSpaceGuid.PcdUefiMemPoolBase|0|UINT64|0x00000a106
   gQcomTokenSpaceGuid.PcdUefiMemPoolSize|0|UINT32|0x00000a107
 
+  # Persistent dmesg record sink for pre-kernel UEFI diagnostics.
+  gQcomTokenSpaceGuid.PcdUefiPstoreLogAddress|0|UINT32|0x00000a108
+  gQcomTokenSpaceGuid.PcdUefiPstoreLogSize|0x8000|UINT32|0x00000a109
+
+  # Keep diagnostics off an unverified bootloader scanout surface.
+  gQcomTokenSpaceGuid.PcdFrameBufferSerialLogOnly|FALSE|BOOLEAN|0x00000a10a
+
   # Simple FrameBuffer
   gQcomTokenSpaceGuid.PcdMipiFrameBufferAddress|0x00400000|UINT32|0x0000a400
   gQcomTokenSpaceGuid.PcdMipiFrameBufferWidth|1080|UINT32|0x0000a401
@@ -52,6 +59,7 @@
   gQcomTokenSpaceGuid.PcdMipiFrameBufferVisibleWidth|1080|UINT32|0x0000a404
   gQcomTokenSpaceGuid.PcdMipiFrameBufferVisibleHeight|2160|UINT32|0x0000a405
   gQcomTokenSpaceGuid.PcdMipiFrameBufferDelay|1|UINT32|0x0000a406
+  gQcomTokenSpaceGuid.PcdMipiFrameBufferStride|0|UINT32|0x0000a407
 																 
   # Touch Screen
   gQcomTokenSpaceGuid.PcdTouchCtlrAddress|0|UINT16|0x0000a501

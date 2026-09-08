@@ -10,4 +10,5 @@ APRIORI DXE {
   INF MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe.inf
   INF EmbeddedPkg/MetronomeDxe/MetronomeDxe.inf
   INF ArmPkg/Drivers/TimerDxe/TimerDxe.inf
+  INF Platform/ZTE/msm8996/Drivers/FujisanDisplayDxe/FujisanDisplayDxe.inf
 }

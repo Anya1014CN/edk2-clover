@@ -45,6 +45,7 @@ function _load_platform_hooks(){
 }
 
 function _build(){
+	local BOOTSHIM_CPPFLAGS=""
 	local DEVICE="${1}"
 	shift
 	source "${_EDK2}/edksetup.sh"
@@ -118,7 +119,7 @@ function _build(){
 	echo "Building BootShim"
 	pushd "${ROOTDIR}/tools/BootShim"
 	rm -f BootShim.bin BootShim.elf BootShim.Dualboot.bin BootShim.Dualboot.elf
-	make UEFI_BASE=${FD_BASE} UEFI_SIZE=${FD_SIZE}
+	make UEFI_BASE=${FD_BASE} UEFI_SIZE=${FD_SIZE} EXTRA_CPPFLAGS="${BOOTSHIM_CPPFLAGS:-}"
 	popd
 
 	_call_hook platform_pre_build||return "$?"

@@ -1,6 +1,7 @@
 #include <Library/PcdLib.h>
 #include <Library/ArmLib.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/CacheMaintenanceLib.h>
 #include <Library/DebugLib.h>
 #include <Library/IoLib.h>
 #include <Library/MemoryAllocationLib.h>
@@ -13,35 +14,12 @@
 
 #include "PlatformUtils.h"
 
-VOID InitializeSharedUartBuffers(VOID)
-{
-  /*
-   * The framebuffer physical address is intentionally unset in Milestone 1.
-   * Never touch address zero or any guessed framebuffer location.  Once the
-   * original bootloader framebuffer has been measured, set the PCD and retain
-   * this shared-console layout.
-   */
-  if (FixedPcdGet32(PcdMipiFrameBufferAddress) == 0)
-    return;
-
-  INTN *pFbConPosition = (INTN *)(FixedPcdGet32(PcdMipiFrameBufferAddress) +
-      (FixedPcdGet32(PcdMipiFrameBufferWidth) *
-       FixedPcdGet32(PcdMipiFrameBufferHeight) *
-       FixedPcdGet32(PcdMipiFrameBufferPixelBpp) / 8));
-
-  *(pFbConPosition + 0) = 0;
-  *(pFbConPosition + 1) = 0;
-}
-
 VOID UartInit(VOID)
 {
   SerialPortInitialize();
-  InitializeSharedUartBuffers();
-
-  DEBUG((EFI_D_INFO, "\nRenegade Project edk2-msm (AArch64)\n"));
-  DEBUG((EFI_D_INFO, "MSM8996Pro ZTE Axon M/Fujisan bring-up\n"));
-  DEBUG((EFI_D_INFO, "Firmware version %s built %a %a\n\n",
-         (CHAR16 *)PcdGetPtr(PcdFirmwareVersionString), __TIME__, __DATE__));
+  DEBUG((EFI_D_ERROR, "FJ-UEFI-20260908-E PREPI EL%u\n", (UINT32)(ArmReadCurrentEL() >> 2)));
+  DEBUG((EFI_D_ERROR, "FJ firmware %s built %a %a\n",
+         (CHAR16 *)PcdGetPtr(PcdFirmwareVersionString), __DATE__, __TIME__));
 }
 
 VOID SetWatchdogState(BOOLEAN Enable)
@@ -52,7 +30,6 @@ VOID SetWatchdogState(BOOLEAN Enable)
 VOID PlatformInitialize()
 {
   UartInit();
-
-  /* Disable WatchDog Timer; register base is still a provisional SoC value. */
   SetWatchdogState(FALSE);
+  DEBUG((EFI_D_ERROR, "FJ PREPI platform ready; entering memory/FV setup\n"));
 }

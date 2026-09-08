@@ -23,6 +23,7 @@
 
 [LibraryClasses]
   ArmLib
+  BaseMemoryLib
   PcdLib
   IoLib
   HobLib
@@ -34,5 +35,9 @@
   gQcomTokenSpaceGuid.PcdMipiFrameBufferAddress
   gQcomTokenSpaceGuid.PcdMipiFrameBufferWidth
   gQcomTokenSpaceGuid.PcdMipiFrameBufferHeight
+  gQcomTokenSpaceGuid.PcdMipiFrameBufferStride
   gQcomTokenSpaceGuid.PcdMipiFrameBufferPixelBpp
   gQcomTokenSpaceGuid.PcdMipiFrameBufferDelay
+  gQcomTokenSpaceGuid.PcdFrameBufferSerialLogOnly
+  gQcomTokenSpaceGuid.PcdUefiPstoreLogAddress
+  gQcomTokenSpaceGuid.PcdUefiPstoreLogSize

@@ -29,6 +29,7 @@
   PcdLib
   FrameBufferBltLib
   CacheMaintenanceLib
+  MemoryMapHelperLib
 
 [Protocols]
   gEfiGraphicsOutputProtocolGuid ## PRODUCES
@@ -38,6 +39,9 @@
   gQcomTokenSpaceGuid.PcdMipiFrameBufferAddress
   gQcomTokenSpaceGuid.PcdMipiFrameBufferWidth
   gQcomTokenSpaceGuid.PcdMipiFrameBufferHeight
+  gQcomTokenSpaceGuid.PcdMipiFrameBufferVisibleWidth
+  gQcomTokenSpaceGuid.PcdMipiFrameBufferVisibleHeight
+  gQcomTokenSpaceGuid.PcdMipiFrameBufferStride
 
 [Guids]
   gEfiMdeModulePkgTokenSpaceGuid

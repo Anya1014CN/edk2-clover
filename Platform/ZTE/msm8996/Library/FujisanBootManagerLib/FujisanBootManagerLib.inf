@@ -1,0 +1,26 @@
+[Defines]
+  INF_VERSION = 0x00010005
+  BASE_NAME = FujisanBootManagerLib
+  FILE_GUID = 2a343cbd-caf9-47a1-bba0-11c0bbeb14c9
+  MODULE_TYPE = DXE_DRIVER
+  VERSION_STRING = 1.0
+  LIBRARY_CLASS = PlatformBootManagerLib|DXE_DRIVER
+[Sources]
+  FujisanBootManagerLib.c
+[Packages]
+  ArmPkg/ArmPkg.dec
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+[LibraryClasses]
+  ArmLib
+  DebugLib
+  DevicePathLib
+  MemoryAllocationLib
+  UefiBootManagerLib
+  UefiBootServicesTableLib
+  UefiLib
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid
+  gEfiFirmwareVolume2ProtocolGuid
+[Guids]
+  gEfiEndOfDxeEventGroupGuid
