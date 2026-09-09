@@ -60,6 +60,8 @@
   gSimpleInitTokenSpaceGuid.PcdDeviceTreeStore|0x83300000
   gSimpleInitTokenSpaceGuid.PcdLoggerdUseConsole|FALSE
   gSimpleInitTokenSpaceGuid.PcdLoggerdMinLevel|0xAE02
+  # Use 440 logical DPI for the 5.2-inch 1080p panel; 480 overflows some SimpleInit layouts.
+  gSimpleInitTokenSpaceGuid.PcdGuiDefaultDPI|440
 
 [LibraryClasses.common]
   PlatformBootManagerLib|Platform/ZTE/msm8996/Library/FujisanBootManagerLib/FujisanBootManagerLib.inf
