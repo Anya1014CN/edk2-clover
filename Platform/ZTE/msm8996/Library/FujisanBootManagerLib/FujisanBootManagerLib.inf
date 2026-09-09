@@ -20,6 +20,7 @@
   UefiBootServicesTableLib
   UefiLib
 [Protocols]
+  gEfiSimpleTextInProtocolGuid
   gEfiGraphicsOutputProtocolGuid
   gEfiFirmwareVolume2ProtocolGuid
 [Guids]

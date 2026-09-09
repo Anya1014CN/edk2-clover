@@ -151,6 +151,65 @@ class PreBuildTests(unittest.TestCase):
         self.assertIn('first GOP flush accepted:', flush)
         self.assertIn('lv_disp_flush_ready(disp_drv);', flush)
 
+    def test_keys_mapping_and_observer_bounds(self):
+        keys = (ROOT / 'Platform/ZTE/msm8996/Drivers/FujisanKeysDxe/FujisanKeysDxe.c').read_text()
+        self.assertIn('{0xC108, SCAN_DOWN, CHAR_NULL, TRUE', keys)
+        self.assertIn('{0xC208, SCAN_UP, CHAR_NULL, TRUE', keys)
+        self.assertIn('{0x0810, SCAN_NULL, CHAR_CARRIAGE_RETURN, FALSE', keys)
+        # Bounded v2 channel table, SID0 PPIDs. No assumed APID numbers.
+        for apid in range(256):
+            self.assertLess(0x800 + apid*4, 0xC00)
+            self.assertLess(0x04C00000 + apid*0x8000 + 0x1C, 0x05400000)
+        for address in (0xC108, 0xC208, 0x0810):
+            ppid = address >> 8
+            map_word = (ppid << 8) | 1
+            self.assertEqual((map_word >> 8) & 0xFFF, ppid)
+            command = (1 << 27) | ((address & 255) << 4)
+            self.assertEqual(command >> 27, 1)  # EXT_READL, never PMIC write
+            self.assertEqual(command & 7, 0)     # one byte
+        writes = re.findall(r'MmioWrite32\(([^;]+);', keys)
+        self.assertEqual(writes, ['Button->Channel, EXT_READL | ((UINT32)Offset << 4))'])
+        self.assertIn('Timeout < READ_TIMEOUT_US', keys)
+        self.assertIn('Version != 0x20010000', keys)
+        self.assertIn('PressedCount > 1', keys)
+
+    def test_keys_debounce_model(self):
+        # Python model of Poll's debounce, not execution of the C driver.
+        def events(initial, samples):
+            stable = candidate = initial
+            armed = False
+            count = 0
+            out = 0
+            for pressed in samples:
+                if pressed != candidate:
+                    candidate, count = pressed, 1
+                elif count < 3:
+                    count += 1
+                if count == 3:
+                    if not candidate:
+                        armed = True
+                    elif not stable and armed:
+                        out += 1
+                        armed = False
+                    stable = candidate
+            return out
+        self.assertEqual(events(False, [False]*3 + [True]*30), 1)
+        self.assertEqual(events(True, [True]*30), 0)  # boot key held
+        self.assertEqual(events(True, [False]*3 + [True]*3), 1)
+        self.assertEqual(events(False, [False]*3 + [True,False,True,False]), 0)
+        self.assertEqual(events(False, [False]*3 + [True]*3 + [False]*3 + [True]*3), 2)
+
+    def test_keys_integration(self):
+        path = 'Platform/ZTE/msm8996/Drivers/FujisanKeysDxe/FujisanKeysDxe.inf'
+        for name in ('msm8996.dsc','msm8996.fdf','Apriori.fdf.inc'):
+            self.assertIn(path, (ROOT/'Platform/Qualcomm/msm8996'/name).read_text())
+        bds = (ROOT/'Platform/ZTE/msm8996/Library/FujisanBootManagerLib/FujisanBootManagerLib.c').read_text()
+        self.assertIn('EfiBootManagerUpdateConsoleVariable(ConIn, Path, NULL)', bds)
+        keys = (ROOT/path).with_suffix('.c').read_text()
+        self.assertIn('&gEfiSimpleTextInProtocolGuid, &mInput', keys)
+        self.assertIn('mInput.ReadKeyStroke = ReadKey', keys)
+        self.assertIn('mStopped = TRUE;', keys)
+
     def test_display_bounds(self):
         self.assertTrue(reserved_display(0x80400000, 4352 * 1920))
         self.assertTrue(reserved_display(0x83401000, 3240 * 1920))
@@ -226,7 +285,7 @@ def metadata_check():
     platform.OverrideDuplicateModule()
     modules = platform.Modules
     for path, override in modules.items():
-        if any(x in str(path) for x in ('FujisanDisplay', 'SimpleInitMain', '/BdsDxe/', '/PrePi/', '/CapsuleRuntimeDxe/', '/TimerDxe/')):
+        if any(x in str(path) for x in ('FujisanDisplay', 'FujisanKeys', 'SimpleInitMain', '/BdsDxe/', '/PrePi/', '/CapsuleRuntimeDxe/', '/TimerDxe/')):
             module = db.BuildObject[path, 'AARCH64', 'DEBUG', 'CLANG38']
             libs = GetModuleLibInstances(module, platform, db.BuildObject,
                                          'AARCH64', 'DEBUG', 'CLANG38', str(path), EdkLogger)

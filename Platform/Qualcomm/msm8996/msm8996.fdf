@@ -108,6 +108,7 @@ READ_LOCK_STATUS   = TRUE
   INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
 
   INF Platform/ZTE/msm8996/Drivers/FujisanDisplayDxe/FujisanDisplayDxe.inf
+  INF Platform/ZTE/msm8996/Drivers/FujisanKeysDxe/FujisanKeysDxe.inf
   INF MdeModulePkg/Universal/Console/ConPlatformDxe/ConPlatformDxe.inf
   INF MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
   INF MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf
@@ -119,7 +120,7 @@ READ_LOCK_STATUS   = TRUE
   INF src/main/SimpleInitMain.inf
 
   # No storage controller, USB, ACPI, SMBIOS, shell, Android handoff or second
-  # panel driver. SimpleInit is launched directly; no buttons are required.
+  # panel driver. SimpleInit launches directly; the local keys enable navigation.
   FILE FREEFORM = 4b0364cf-1c5b-47aa-9073-d7b5039ce49b {
     SECTION RAW = Platform/ZTE/msm8996/simpleinit.static.uefi.cfg
     SECTION UI = "simpleinit.static.uefi.cfg"

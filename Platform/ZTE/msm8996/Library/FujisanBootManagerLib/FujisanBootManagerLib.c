@@ -1,6 +1,6 @@
 /** @file
   Display-only BDS: connect GOP and start the FV-resident SimpleInit directly.
-  No keys, physical storage, Android loader, ACPI patching or clock protocols.
+  Optional local keys; no physical storage, Android loader, ACPI or clocks.
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 #include <Uefi.h>
@@ -46,7 +46,22 @@ VOID EFIAPI PlatformBootManagerBeforeConsole(VOID)
     }
   }
   FreePool(Handles);
-  // In particular, never index handles[1] for a nonexistent keypad protocol.
+  // Attach available physical SimpleTextIn handles to the console. SimpleInit
+  // also discovers this protocol directly; both consume the same key queue.
+  Status = gBS->LocateHandleBuffer(ByProtocol, &gEfiSimpleTextInProtocolGuid,
+                                 NULL, &Count, &Handles);
+  if (!EFI_ERROR(Status)) {
+    for (Index = 0; Index < Count; Index++) {
+      EFI_DEVICE_PATH_PROTOCOL *Path = DevicePathFromHandle(Handles[Index]);
+      if (Path != NULL) {
+        EfiBootManagerUpdateConsoleVariable(ConIn, Path, NULL);
+        Status = gBS->ConnectController(Handles[Index], NULL, NULL, TRUE);
+        DEBUG((EFI_D_ERROR, "FJ BDS connect keys: %r\n", Status));
+      }
+    }
+    FreePool(Handles);
+  }
+  // Never index handles[1] for a nonexistent keypad protocol.
 }
 
 STATIC VOID StartSimpleInit(VOID)

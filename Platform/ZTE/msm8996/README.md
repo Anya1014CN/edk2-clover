@@ -1,5 +1,83 @@
 # Fujisan: UEFI -> primary-panel GOP -> SimpleInit
 
+## Pending keys bring-up (2026-09-09, K1 — not compiled or committed)
+
+The accepted display baseline is committed/pushed as `611424035f9fe2ce90959d36696b5f72d9319e94`
+on `Anya1014CN/edk2-msm:msm8996pro`. Its SimpleInit gitlink is
+`c852dd05971d7f278b5ca315dfde107d71e80f55`, already pushed to the owner's fork.
+This separate working-tree change adds physical keys without changing that
+published baseline or modifying the now-clean SimpleInit submodule.
+
+`FujisanKeysDxe` implements SimpleTextIn, which SimpleInit already enumerates.
+The platform BDS adds physical input device paths to ConIn without assuming an
+input handle exists. Polling uses the E-validated architectural timer (10 ms).
+There is no USB keyboard, touch, storage or PMIC long-press reset modification.
+
+### Hardware evidence and read-only scope
+
+The running Android FDT and kernel sources agree:
+
+* SID0 PM8994 GPIO2 (`0xC108`, STATUS1 bit0, active-low) emits Linux key **114**
+  (volume down), despite its node label `vol_up`.
+* SID0 GPIO3 (`0xC208`, STATUS1 bit0, active-low) emits Linux key **115**
+  (volume up), despite its node label `vol_down`.
+* SID0 PON (`0x0810`, RT_STS bit0 asserted on press) emits key **116** (power).
+* Android dmesg reports SPMI arbiter **v2, 0x20010000**; DT uses EE0,
+  core `0x0400F000` size `0xC00`, observer `0x04C00000` size `0x800000`.
+
+References in the local kernel are `msm8996.dtsi`, `msm-pm8994.dtsi`,
+`msm8996-mtp-fujisan.dtsi`, `drivers/spmi/spmi-pmic-arb.c`,
+`drivers/gpio/qpnp-pin.c`, and `drivers/input/misc/qpnp-power-on.c`.
+Runtime evidence is saved at
+`/Users/anya1014/Documents/ZTE_Z999/_uefi_diagnosis_20260908_keys/`.
+
+The driver finds APIDs using the v2 mapping table, not hard-coded channel IDs.
+It supports exactly the observed v2 version, uses EE0 observer channels, and
+writes **only read-command descriptors to the controller's CMD register**.
+It never issues a PMIC register-write opcode, changes GPIO direction/pull/enable,
+or touches PON long-press/reset settings. Each transaction waits at most 100 us;
+a read failure stops polling without synthesizing a key. GPIO type, input mode
+and enabled status must match the inherited configuration, otherwise the driver
+logs and declines installation. If LK left the GPIO disabled this read-only
+version needs another evidence-based iteration, not an assumed initialization.
+
+Three stable samples debounce a key. Boot/reset-held keys must be released first;
+there is one event per press, no autorepeat, a 16-entry queue, and simultaneous
+key chords are ignored until release. GPIO3 maps to SCAN_UP, GPIO2 to SCAN_DOWN;
+power maps to carriage return. The SimpleInit UI translates those into navigation
+and confirmation. Physical direction/response still needs owner verification.
+
+### Build/test handoff
+
+Seventeen source/model tests and EDK2 metadata/library resolution pass; these do
+not compile or execute the driver. No new image was built or flashed, and these
+key changes are intentionally **not committed/pushed** pending hardware testing.
+The E BootShim/PrePi identity is unchanged; K1 is identified by
+`FJ KEYS 20260909-K1` and `FJ KEYS SimpleTextIn installed` in pstore.
+
+Build from `/home/anya1014/edk2-msm` with the existing command:
+
+```sh
+./build.sh -d fujisan -r DEBUG
+```
+
+Keep the validated recovery-target signing/entry method. Release the boot-entry
+keys before menu testing. Within the known 10-second interval, briefly press
+volume up/down and check focus movement; check whether moving focus cancels the
+countdown. Use short power presses to confirm a harmless UI action. Long power
+press still belongs to the unchanged PMIC reset behavior. No Android loader is
+implemented by this patch; Continue Boot is not an Android handoff guarantee.
+
+If input is absent, capture the complete pstore after returning to Android:
+
+```sh
+adb exec-out su -c 'cat /sys/fs/pstore/dmesg-ramoops-0' > fujisan-uefi-next-pstore.txt
+```
+
+Look for arbiter/version, APID mapping, GPIO mode and initial state, protocol
+installation, and bounded `FJ KEYS press` traces. Do not commit this K1 patch
+until the owner confirms actual menu navigation and power confirmation.
+
 ## Validated display baseline (2026-09-08, revision E)
 
 The device owner confirms that revision E **visibly displays the UI** on the
