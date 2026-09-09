@@ -1,5 +1,188 @@
 # Fujisan: UEFI -> primary-panel GOP -> SimpleInit
 
+## Fujisan SimpleInit DPI adjustment (2026-09-09)
+
+The display and touch are now visible/functional, but the owner reports that
+SimpleInit elements are too small. Android device configuration uses
+`TARGET_SCREEN_DENSITY := 480` and `ro.sf.lcd_density=480`; the panel DTS reports
+64×114 mm, which corresponds to approximately 428 physical DPI. SimpleInit's
+current default is 200 DPI, so its font-size threshold selects a much smaller
+font and scales UI spacing down.
+
+The initial 480-DPI test made some SimpleInit layouts overflow. The Fujisan DSC
+now overrides `PcdGuiDefaultDPI` to **440**. SimpleInit's threshold logic selects
+the 48 px normal font tier, retaining a substantially larger UI than the old
+200-DPI default without the 480-DPI layout distortion. This changes only GUI
+layout/font sizing; GOP remains 1080×1920 and Absolute Pointer coordinates
+remain 0..1079 × 0..1919. It is a source-only pending change and should be
+visually checked together with touch T6.
+
+## Pending primary touch bring-up (2026-09-09, T1 — not compiled or committed)
+
+T1 is separate from the verified display/key commits. It targets only the
+primary Synaptics DSX/RMI4 controller and leaves the secondary controller at
+`0x075B9000` untouched. The direct driver publishes UEFI Absolute Pointer,
+which SimpleInit already consumes through its existing `uefi-touch` input driver.
+
+### Hardware evidence and intentionally narrow QUP scope
+
+The current Android FDT and running device identify the primary controller:
+
+```text
+QUP I2C12 base:       0x075BA000 (qcom,i2c-msm-v2)
+controller address:   0x20
+I2C speed:            400 kHz
+SDA/SCL TLMM pins:    87 / 88
+interrupt/reset pins: 125 / 89 (active-low)
+controller:           synaptics,dsx-i2c (RMI4)
+```
+
+Android owns `/devices/soc/75ba000.i2c/i2c-12/12-0020`; its touchscreen works.
+Android dmesg records the MSM8996 PMIC-independent QUP transport generation as
+its standard `i2c-msm-v2` binding. The local generic Linux source
+`drivers/i2c/busses/i2c-qup.c` provides the register/tag/state sequence used by
+T1. The existing EDK2 `SynapticsRmi4Dxe` was inspected but is not included:
+it requires Qualcomm I2C/TLMM DXE protocols for which this repository has no
+verified MSM8996 implementation. Reusing MSM8998/SDM660 binaries is deliberately
+not done.
+
+`FujisanTouchDxe` implements only the v2 transport sequence needed for short,
+polled operations. It performs normal I2C writes to select RMI register/page and
+normal I2C reads to obtain PDT/F12 data. **It does not send touch-controller
+configuration commands, reset the touch IC, configure/drive TLMM reset/IRQ/SDA/
+SCL pins, modify PMIC rails, or access second-screen hardware.** QUP transport
+state/config/FIFO writes are unavoidable to issue standard I2C transactions;
+they are scoped to `0x075BA000` and bounded by 10 ms per operation.
+
+On entry, the driver checks that QUP is reachable, scans the standard RMI PDT
+for F12 (pages 0–3), then polls that F12 data record every 20 ms. It exports
+0..1079 × 0..1919 touch coordinates, debounces state, emits press/move/release
+changes, stops after five read failures, and never fabricates an input event.
+If LK did not leave the QUP clock/pins/controller usable, expected result is
+an `FJ TOUCH F12 probe failed` trace—not a reset/power experiment. The primary
+DTS contains no x/y flip property, so T1 initially preserves raw controller
+orientation; physical direction and calibration must be verified.
+
+The SimpleInit submodule has an additional uncommitted `uefi_touch.c` correction:
+its UEFI Absolute Pointer consumer now explicitly reports idle release and
+honors `ActiveButtons` for press/release. Without it, an unchanged coordinate
+could suppress release delivery. This modification is **not pushed or pinned**
+yet; after T1 hardware validation it will be committed to the existing owner
+fork branch and the parent gitlink will be updated before any touch commit.
+
+### T1 result and T2/T3/T4/T5/T6/T7 touch bring-up corrections
+
+T1 was compiled and booted but did not publish Absolute Pointer. The actual
+trace is stored in `/Users/anya1014/Documents/ZTE_Z999/_uefi_diagnosis_20260909_touch_t1/`:
+
+```text
+FJ TOUCH 20260909-T1 QUP=20060000
+FJ TOUCH F12 probe failed: Time out
+```
+
+This proves the QUP register aperture is live, but T1 incorrectly implemented
+the **older** QUP word-tag transport despite the Android device binding being
+`qcom,i2c-msm-v2`. Specifically, it used old `START/DATA/STOP/REC` tags, N=15,
+a low-word-only clock value, and split write/read transactions. That mismatch
+can stall a v2 transfer without an RMI response.
+
+T2 replaces only the transport layer with the local `i2c-msm-v2.c` sequence:
+QUP v2 master config is enabled, N=7, the DT dividers become
+`0x00150015` (high divider in bits 16–23, fs divider in bits 0–7), and each
+RMI register read is one combined FIFO transaction using byte tags
+`START(0x81), DATA_WRITE(0x82), START(0x81), DATA_READ_N_STOP(0x87)`.
+It accounts for the driver-defined two-byte input EOT overhead before copying
+payload bytes. T2 retains the no-reset/no-TLMM/no-PMIC/no-second-panel policy.
+
+T2 adds bounded QUP diagnostics containing state, config, operational, I2C
+status, error flags and master-config for each failed stage. New marker:
+`FJ TOUCH 20260909-T7`. It is source-checked but uncompiled, uncommitted and
+unpublished; rebuild it before judging touch again.
+
+### T3 result and T4 MMIO correction
+
+T3 reached `FJ TOUCH 20260909-T3 QUP=20060000` and then faulted synchronously
+inside QUP clock initialization. The GCC clock aperture at `0x00300000` was
+not mapped in the UEFI MMU memory map. T4 adds the bounded GCC MMIO region
+`0x00300000..0x00390000`; display/key paths and the clock sequence are otherwise
+unchanged. T4 is uncompiled, uncommitted and untested.
+
+### T4 result and T5 pinmux correction
+
+T4 successfully enabled the GCC clocks but its first v2 transaction returned
+`Device Error`; diagnostics showed QUP bus active/master and Android's current
+GPIO87/88 state was function 3 with 2mA pull-down (the `i2c_12_sleep` state).
+T5 applies the local kernel `i2c_12_active` pin configuration directly to the
+SoC TLMM registers: GPIO87/88 function 3, 2mA drive encoding 0, no pull, input
+output-enable cleared. It does not touch touch reset/power GPIOs or PMIC rails.
+T5 is uncompiled, uncommitted and untested.
+
+### T5 result and T6 protocol correction
+
+T5 reached F12 and installed AbsolutePointer, then faulted in SimpleInit while
+its `uefi-touch` protocol-notification callback registered the new device. The
+consumer immediately reads `touch->Mode->AbsoluteMaxX/Y`; T5 populated the mode
+record but forgot `mTouch.Protocol.Mode = &mTouch.Mode`. T6 adds that required
+UEFI protocol pointer. The exception PC from T5 (`0xAB96B514`) belongs to
+SimpleInit, consistent with this cross-module NULL dereference. T6 does not
+change QUP, GPIO, GCC, display, keys or touch data decoding. It is uncompiled,
+uncommitted and untested.
+
+### T5 result and T6 AbsolutePointer correction
+
+T5 successfully selected active I2C12 pins, enabled clocks, found RMI4 F12 on
+page 0 at data address 0x06, and installed AbsolutePointer. It then faulted in
+SimpleInit immediately after the keyboard protocol notification. T5 populated
+`mTouch.Mode` but failed to assign the mandatory protocol field
+`mTouch.Protocol.Mode = &mTouch.Mode`; SimpleInit `_touch_register()` immediately
+dereferenced `touch->Mode->AbsoluteMaxX/Y`, matching the observed SimpleInit
+exception. T6 sets the protocol Mode pointer before installation and also makes
+SimpleInit reject malformed AbsolutePointer providers safely.
+
+T5 additionally repeated TLMM/GCC initialization for every RMI transaction,
+filling pstore and doing unnecessary clock/pin writes. T6 performs those steps
+once before F12 discovery; individual 20ms polls only reset/configure QUP and
+issue I2C. QUP/RMI packet format, display, keys, coordinates and second-panel
+scope are unchanged. T6 is uncompiled, uncommitted and untested.
+
+### T6 result and T7 latency correction
+
+T6 makes touch functional, but the owner reports visible latency and some taps
+requiring two or three attempts. The driver polled every 20 ms and its state
+machine required multiple consistent polls, so short taps could need 40–60 ms
+before publication. T7 trusts the Synaptics F12 controller classification,
+removes redundant software debounce, and polls every 10 ms.
+
+The SimpleInit consumer also treated every callback without a new protocol state
+as release while requesting immediate rereads after press. T7 preserves the last
+contact state on `EFI_NOT_READY`, honors `EFI_ABSP_TouchActive`, and disables
+`continue_reading` because this provider is not an event queue. Bounded press/
+release logs are enabled for the first 24 events. Transport, coordinates, DPI,
+display, keys and second-panel scope are unchanged. T7 is uncompiled and
+uncommitted; the 440-DPI-only commit is already published separately.
+
+### T1 test handoff
+
+Twenty-one pre-build source/model checks and EDK2 metadata/library resolution
+pass. They include QUP tag packet models, PDT descriptor layout, MMIO write
+scope, second-panel exclusion, Absolute Pointer publication, and SimpleInit
+release handling. They do not compile, execute QUP I2C, or prove touch works.
+T1 is not compiled, packed, flashed, committed or pushed.
+
+```sh
+cd /home/anya1014/edk2-msm
+./build.sh -d fujisan -r DEBUG
+```
+
+Use the verified recovery-target entry path. In SimpleInit, short touches on the
+primary panel should generate `FJ TOUCH point` and interact with the UI; check
+both drag and release. Do not press/reset second-screen hardware as part of this
+test. After returning to Android, capture the complete pstore as usual. Key
+checkpoints: `FJ TOUCH 20260909-T2 QUP=`, `FJ TOUCH F12 page=`,
+`FJ TOUCH AbsolutePointer installed`, then touch points; failures must include
+an I2C/RMI status. Confirm first whether the touch coordinate orientation is
+correct before asking for gestures or multi-touch.
+
 ## Pending keys bring-up (2026-09-09, K1 — not compiled or committed)
 
 The accepted display baseline is committed/pushed as `611424035f9fe2ce90959d36696b5f72d9319e94`

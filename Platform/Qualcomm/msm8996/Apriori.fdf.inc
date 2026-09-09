@@ -12,4 +12,5 @@ APRIORI DXE {
   INF ArmPkg/Drivers/TimerDxe/TimerDxe.inf
   INF Platform/ZTE/msm8996/Drivers/FujisanDisplayDxe/FujisanDisplayDxe.inf
   INF Platform/ZTE/msm8996/Drivers/FujisanKeysDxe/FujisanKeysDxe.inf
+  INF Platform/ZTE/msm8996/Drivers/FujisanTouchDxe/FujisanTouchDxe.inf
 }

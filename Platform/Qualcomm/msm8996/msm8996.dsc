@@ -75,6 +75,7 @@
 [Components.common]
   Platform/ZTE/msm8996/Drivers/FujisanDisplayDxe/FujisanDisplayDxe.inf
   Platform/ZTE/msm8996/Drivers/FujisanKeysDxe/FujisanKeysDxe.inf
+  Platform/ZTE/msm8996/Drivers/FujisanTouchDxe/FujisanTouchDxe.inf
 
 # Architecture-specific component overrides the COMMON declaration from
 # SimpleInit.inc. Keep GUI INFO logs without DXE core protocol-install spam.

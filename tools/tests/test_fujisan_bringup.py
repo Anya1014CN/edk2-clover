@@ -210,6 +210,109 @@ class PreBuildTests(unittest.TestCase):
         self.assertIn('mInput.ReadKeyStroke = ReadKey', keys)
         self.assertIn('mStopped = TRUE;', keys)
 
+    def test_fujisan_dpi_matches_android(self):
+        dsc = (ROOT / "Platform/Qualcomm/msm8996/msm8996.dsc").read_text()
+        self.assertIn("gSimpleInitTokenSpaceGuid.PcdGuiDefaultDPI|440", dsc)
+        # SimpleInit's threshold table selects 64 px for 451..550 DPI.
+        dpi = 440
+        font_sizes = [8, 16, 24, 32, 48, 64, 72]
+        index = sum(dpi > threshold for threshold in (50, 150, 250, 350, 450, 550))
+        self.assertEqual(font_sizes[index], 48)
+        self.assertNotIn("PcdGuiDefaultDPI|480", dsc)
+        self.assertNotIn("PcdGuiDefaultDPI|200", dsc)
+
+    def test_touch_qup_and_rmi4_scope(self):
+        touch = (ROOT / "Platform/ZTE/msm8996/Drivers/FujisanTouchDxe/FujisanTouchDxe.c").read_text()
+        self.assertIn("#define QUP_BASE               0x075BA000U", touch)
+        self.assertIn("#define RMI_I2C_ADDRESS         0x20U", touch)
+        self.assertIn("#define RMI_FUNCTION_F12         0x12U", touch)
+        self.assertIn("RMI_MAX_PAGES            4U", touch)
+        self.assertIn("QUP_CLK_CTL_400KHZ      0x00150015U", touch)
+        # The only transport writes target QUP registers. No touch reset,
+        # PMIC, TLMM or second-panel address appears in the driver.
+        for forbidden in ("0x075B9000", "0x075B5000", "0x09830000",
+                          "ControllerReset", "ConfigGpio", "GpioOut", "SPMI"):
+            self.assertNotIn(forbidden, touch)
+        writes = re.findall(r"MmioWrite32\(QUP_BASE \+ ([^,]+),", touch)
+        self.assertTrue(writes)
+        allowed = {"QUP_STATE", "QUP_SW_RESET", "QUP_CONFIG", "QUP_ERROR_FLAGS",
+                   "QUP_ERROR_FLAGS_EN", "QUP_OPERATIONAL", "QUP_OPERATIONAL_MASK",
+                   "QUP_IO_MODE", "QUP_MX_WRITE_CNT", "QUP_MX_READ_CNT",
+                   "QUP_I2C_CLK_CTL", "QUP_I2C_MASTER_CONFIG", "QUP_I2C_STATUS",
+                   "QUP_OUT_FIFO_BASE"}
+        self.assertTrue(set(writes).issubset(allowed), set(writes) - allowed)
+        self.assertIn("FindF12()", touch)
+        self.assertIn("&gEfiAbsolutePointerProtocolGuid, &mTouch.Protocol", touch)
+        self.assertIn("TOUCH_FAILURE_LIMIT", touch)
+        self.assertIn("FJ TOUCH 20260909-T7", touch)
+        self.assertIn("QUP_TAG2_DATA_READ_END", touch)
+        self.assertIn("QUP_I2C_MASTER_CONFIG, 1", touch)
+        self.assertIn("GCC_AHB_BLSP2_BIT      BIT15", touch)
+        self.assertIn("GCC_QUP6_I2C_CMD       0x030020U", touch)
+        self.assertIn("GCC_QUP6_I2C_CBCR      0x030008U", touch)
+        self.assertIn("TLMM_I2C12_SDA          87U", touch)
+        self.assertIn("TLMM_I2C12_SCL          88U", touch)
+        self.assertIn("TLMM_I2C12_FUNCTION     3U", touch)
+        self.assertIn("ConfigureI2c12Pins()", touch)
+        self.assertEqual(touch.count("Status = ConfigureI2c12Pins();"), 1)
+        self.assertEqual(touch.count("Status = EnableQupClocks();"), 1)
+        mmap = (ROOT / "Silicon/Qualcomm/msm8996/Library/PlatformMemoryMapLib/PlatformMemoryMapLib.c").read_text()
+        self.assertIn('{"GCC Clock Control", 0x00300000, 0x00090000', mmap)
+        self.assertIn("EnableQupClocks()", touch)
+
+    def test_touch_latency_policy(self):
+        driver = (ROOT / "Platform/ZTE/msm8996/Drivers/FujisanTouchDxe/FujisanTouchDxe.c").read_text()
+        self.assertIn("TOUCH_POLL_100NS         100000ULL", driver)
+        self.assertNotIn("TOUCH_DEBOUNCE_SAMPLES", driver)
+        self.assertNotIn("CandidateSamples", driver)
+        self.assertIn("Pressed = Data[0] != 0;", driver)
+        self.assertIn("EFI_ABSP_TouchActive", driver)
+        self.assertIn("FJ TOUCH event down", driver)
+        self.assertIn("FJ TOUCH event up", driver)
+
+    def test_touch_i2c_packet_models(self):
+        # Fujisan uses qcom,i2c-msm-v2, whose FIFO uses byte tags, not the
+        # older QUP word tags. A RMI read is one combined write/read transfer.
+        addr = 0x20
+        register = 0xE9
+        read_len = 6
+        tx = bytes([0x81, addr << 1, 0x82, 1, register,
+                    0x81, (addr << 1) | 1, 0x87, read_len])
+        self.assertEqual(tx, bytes([0x81, 0x40, 0x82, 1, 0xE9,
+                                    0x81, 0x41, 0x87, 6]))
+        self.assertEqual(len(tx), 9)
+        self.assertEqual(read_len + 2, 8)  # v2 INPUT_EOT overhead + payload
+        # DT high/fs divider fields occupy bits 16..23 and 0..7.
+        self.assertEqual(0x00150015, (0x15 << 16) | 0x15)
+        descriptor = bytes([0x10, 0x20, 0x30, 0x40, 0x01, 0x12])
+        self.assertEqual(descriptor[5], 0x12)
+        self.assertEqual(descriptor[3], 0x40)
+
+    def test_touch_absolute_pointer_mode_pointer(self):
+        source = (ROOT / "Platform/ZTE/msm8996/Drivers/FujisanTouchDxe/FujisanTouchDxe.c").read_text()
+        self.assertIn("mTouch.Protocol.Mode = &mTouch.Mode;", source)
+        self.assertLess(source.index("mTouch.Protocol.Mode = &mTouch.Mode;"), source.index("&gEfiAbsolutePointerProtocolGuid, &mTouch.Protocol"))
+        # The consumer dereferences Mode before its first GetState call.
+        consumer = (ROOT / "GPLDrivers/Library/SimpleInit/src/gui/drivers/uefi_touch.c").read_text()
+        self.assertIn("data->touch->Mode->AbsoluteMaxX", consumer)
+        self.assertIn("data->touch->Mode->AbsoluteMaxY", consumer)
+        self.assertIn("if(!touch||!touch->Mode||", consumer)
+
+    def test_touch_simpleinit_release_consumption(self):
+        source = (ROOT / "GPLDrivers/Library/SimpleInit/src/gui/drivers/uefi_touch.c").read_text()
+        self.assertIn("data->state=touch_down?LV_INDEV_STATE_PR:LV_INDEV_STATE_REL;", source)
+        self.assertIn("touch_down=(p.ActiveButtons&EFI_ABSP_TouchActive)!=0;", source)
+        self.assertIn("data->continue_reading=false;", source)
+        self.assertNotIn("data->continue_reading=(p.ActiveButtons!=0);", source)
+        self.assertNotIn("if(p.CurrentX==d->lx&&p.CurrentY==d->ly)continue;", source)
+
+    def test_touch_integration(self):
+        path = "Platform/ZTE/msm8996/Drivers/FujisanTouchDxe/FujisanTouchDxe.inf"
+        for name in ("msm8996.dsc", "msm8996.fdf", "Apriori.fdf.inc"):
+            self.assertIn(path, (ROOT / "Platform/Qualcomm/msm8996" / name).read_text())
+        mmap = (ROOT / "Silicon/Qualcomm/msm8996/Library/PlatformMemoryMapLib/PlatformMemoryMapLib.c").read_text()
+        self.assertIn("{\"QUP I2C12\",        0x075BA000, 0x00001000", mmap)
+
     def test_display_bounds(self):
         self.assertTrue(reserved_display(0x80400000, 4352 * 1920))
         self.assertTrue(reserved_display(0x83401000, 3240 * 1920))
@@ -285,7 +388,7 @@ def metadata_check():
     platform.OverrideDuplicateModule()
     modules = platform.Modules
     for path, override in modules.items():
-        if any(x in str(path) for x in ('FujisanDisplay', 'FujisanKeys', 'SimpleInitMain', '/BdsDxe/', '/PrePi/', '/CapsuleRuntimeDxe/', '/TimerDxe/')):
+        if any(x in str(path) for x in ('FujisanDisplay', 'FujisanKeys', 'FujisanTouch', 'SimpleInitMain', '/BdsDxe/', '/PrePi/', '/CapsuleRuntimeDxe/', '/TimerDxe/')):
             module = db.BuildObject[path, 'AARCH64', 'DEBUG', 'CLANG38']
             libs = GetModuleLibInstances(module, platform, db.BuildObject,
                                          'AARCH64', 'DEBUG', 'CLANG38', str(path), EdkLogger)
