@@ -43,6 +43,8 @@ jobs:
           - lisa
           # msm8998
           - cheeseburger
+          # sdm660
+          - clover
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
